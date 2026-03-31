@@ -1,134 +1,156 @@
-import re
-import random
-import string
+import tkinter as tk
 from tkinter import *
-from tkinter.ttk import Progressbar
+from cryptography.fernet import Fernet
+import random, string, os
 
-# ---------------- FUNCTIONS ---------------- #
+# ---------- KEY ----------
+def load_key():
+    if not os.path.exists("key.key"):
+        key = Fernet.generate_key()
+        with open("key.key", "wb") as f:
+            f.write(key)
+    else:
+        with open("key.key", "rb") as f:
+            key = f.read()
+    return key
 
-def check_password_strength(password):
+key = load_key()
+fernet = Fernet(key)
+
+history = []
+
+# ---------- STRENGTH ----------
+def check_strength(password):
     score = 0
-    suggestions = []
+    if len(password) >= 6: score += 1
+    if len(password) >= 10: score += 1
+    if any(c.isupper() for c in password): score += 1
+    if any(c.isdigit() for c in password): score += 1
+    if any(c in "!@#$%^&*" for c in password): score += 1
 
-    if len(password) >= 8:
-        score += 1
+    if score <= 2: return "Weak ❌", "red"
+    elif score <= 4: return "Medium ⚠️", "orange"
+    else: return "Strong ✅", "green"
+
+# ---------- LOGIN ----------
+def login():
+    if user_entry.get() == "komal" and pass_entry.get() == "1234":
+        login_window.destroy()
+        open_main()
     else:
-        suggestions.append("Use at least 8 characters")
+        error_label.config(text="Wrong credentials ❌")
 
-    if re.search(r"[A-Z]", password):
-        score += 1
-    else:
-        suggestions.append("Add uppercase letter")
+# ---------- MAIN APP ----------
+def open_main():
+    root = Tk()
+    root.title("Pro Password Manager 🔐")
+    root.geometry("520x600")
+    root.configure(bg="#0a2342")
 
-    if re.search(r"[a-z]", password):
-        score += 1
-    else:
-        suggestions.append("Add lowercase letter")
+    # ---------- FUNCTIONS ----------
+    def on_type(event):
+        pwd = password_entry.get()
+        if pwd:
+            s,c = check_strength(pwd)
+            result_label.config(text=s, fg=c)
+            canvas.itemconfig(bar, fill=c)
+        else:
+            result_label.config(text="")
+            canvas.itemconfig(bar, fill="grey")
 
-    if re.search(r"[0-9]", password):
-        score += 1
-    else:
-        suggestions.append("Add number")
+    def generate():
+        length = length_slider.get()
+        chars = string.ascii_letters + string.digits + "!@#$%^&*"
+        pwd = "".join(random.choice(chars) for _ in range(length))
+        password_entry.delete(0, END)
+        password_entry.insert(0, pwd)
 
-    if re.search(r"[!@#$%^&*]", password):
-        score += 1
-    else:
-        suggestions.append("Add special character")
+    def save():
+        pwd = password_entry.get()
+        enc = fernet.encrypt(pwd.encode())
+        with open("data.dat","ab") as f:
+            f.write(enc+b"\n")
+        history_box.insert(END, pwd)
 
-    return score, suggestions
+    def load():
+        history_box.delete(0, END)
+        try:
+            with open("data.dat","rb") as f:
+                for line in f:
+                    dec = fernet.decrypt(line.strip()).decode()
+                    history_box.insert(END, dec)
+        except:
+            pass
 
+    def copy():
+        root.clipboard_clear()
+        root.clipboard_append(password_entry.get())
+        root.update()
 
-def check():
-    pwd = entry.get()
-    score, suggestions = check_password_strength(pwd)
+    def clear():
+        password_entry.delete(0, END)
+        result_label.config(text="")
+        canvas.itemconfig(bar, fill="grey")
 
-    if score == 5:
-        strength = "Strong 💪"
-        color = "#133F15"  # Green
-    elif score >= 3:
-        strength = "Medium ⚠️"
-        color = "#91741B"  # Amber
-    else:
-        strength = "Weak ❌"
-        color = "#5F0D07"  # Red
+    show = False
+    def toggle():
+        nonlocal show
+        show = not show
+        password_entry.config(show="" if show else "*")
 
-    result_label.config(text=strength, fg=color)
-    progress['value'] = score * 20
-    suggest_label.config(text="\n".join(suggestions))
+    # ---------- UI ----------
+    Label(root, text="Password Manager 🔐", font=("Arial",18,"bold"),
+          fg="white", bg="#0a2342").pack(pady=10)
 
+    password_entry = Entry(root, show="*", font=("Arial",14), width=25)
+    password_entry.pack(pady=10)
+    password_entry.bind("<KeyRelease>", on_type)
 
-def toggle_password():
-    if entry.cget('show') == '*':
-        entry.config(show='')
-        show_btn.config(text='Hide')
-    else:
-        entry.config(show='*')
-        show_btn.config(text='Show')
+    result_label = Label(root, text="", font=("Arial",14), bg="#0a2342")
+    result_label.pack()
 
+    canvas = Canvas(root, width=200, height=20, bg="#0a2342", highlightthickness=0)
+    canvas.pack(pady=5)
+    bar = canvas.create_rectangle(0,0,200,20, fill="grey")
 
-def generate_password():
-    chars = string.ascii_letters + string.digits + "!@#$%^&*"
-    pwd = ''.join(random.choice(chars) for _ in range(12))
-    entry.delete(0, END)
-    entry.insert(0, pwd)
-    check()
+    length_slider = Scale(root, from_=6, to=20, orient=HORIZONTAL,
+                          label="Password Length")
+    length_slider.set(10)
+    length_slider.pack()
 
+    frame = Frame(root, bg="#0a2342")
+    frame.pack(pady=10)
 
-def copy_password():
-    root.clipboard_clear()
-    root.clipboard_append(entry.get())
+    Button(frame, text="Generate", bg="#3a86ff", fg="white", command=generate).grid(row=0,column=0,padx=5)
+    Button(frame, text="Copy", bg="#8338ec", fg="white", command=copy).grid(row=0,column=1,padx=5)
+    Button(frame, text="Clear", bg="#ef233c", fg="white", command=clear).grid(row=0,column=2,padx=5)
+    Button(frame, text="Show/Hide", bg="#e36414", fg="white", command=toggle).grid(row=0,column=3,padx=5)
 
+    Button(root, text="Save (Encrypted)", command=save, bg="#2a9d8f", fg="white").pack(pady=5)
+    Button(root, text="Load Passwords", command=load, bg="#264653", fg="white").pack(pady=5)
 
-# ---------------- GUI SETUP ---------------- #
+    Label(root, text="History", fg="white", bg="#0a2342").pack()
+    history_box = Listbox(root, width=40)
+    history_box.pack(pady=10)
 
-root = Tk()
-root.title("Password Strength Checker")
-root.geometry("450x480")
-root.config(bg="#0a2342")  # Dark navy blue
+    root.mainloop()
 
-# Fonts
-title_font = ("Helvetica", 20, "bold")
-button_font = ("Helvetica", 12, "bold")
-label_font = ("Helvetica", 12)
+# ---------- LOGIN UI ----------
+login_window = Tk()
+login_window.title("Login 🔐")
+login_window.geometry("300x250")
 
-# Title Label
-title = Label(root, text="Password Strength Checker", font=title_font, fg="white", bg="#0a2342")
-title.pack(pady=(20, 15))
+Label(login_window, text="Username").pack()
+user_entry = Entry(login_window)
+user_entry.pack()
 
-# Frame for Entry and Show button
-entry_frame = Frame(root, bg="#0a2342")
-entry_frame.pack(pady=(0, 10))
+Label(login_window, text="Password").pack()
+pass_entry = Entry(login_window, show="*")
+pass_entry.pack()
 
-entry = Entry(entry_frame, show="*", font=("Helvetica", 16), width=25, bd=3, relief=GROOVE)
-entry.pack(side=LEFT, padx=(0, 10))
+Button(login_window, text="Login", command=login).pack(pady=10)
 
-show_btn = Button(entry_frame, text="Show", command=toggle_password, font=button_font, bg="#005f73", fg="white", bd=0, padx=10)
-show_btn.pack(side=LEFT)
+error_label = Label(login_window, text="", fg="red")
+error_label.pack()
 
-# Check Strength Button
-check_btn = Button(root, text="Check Strength", command=check, font=button_font, bg="#028090", fg="white", padx=15, pady=8, bd=0)
-check_btn.pack(pady=10)
-
-# Progress Bar
-progress = Progressbar(root, length=350, mode='determinate')
-progress.pack(pady=10)
-
-# Result Label
-result_label = Label(root, text="", font=("Helvetica", 16, "bold"), bg="#0a2342")
-result_label.pack(pady=10)
-
-# Suggestions Label
-suggest_label = Label(root, text="", font=label_font, fg="#caf0f8", bg="#0a2342", justify=LEFT)
-suggest_label.pack(pady=10)
-
-# Frame for Generate and Copy buttons
-btn_frame = Frame(root, bg="#07121f")
-btn_frame.pack(pady=20)
-
-generate_btn = Button(btn_frame, text="Generate Password", command=generate_password, font=button_font, bg="#05668d", fg="white", bd=0, padx=15, pady=8)
-generate_btn.pack(side=LEFT, padx=10)
-
-copy_btn = Button(btn_frame, text="Copy Password", command=copy_password, font=button_font, bg="#028090", fg="white", bd=0, padx=15, pady=8)
-copy_btn.pack(side=LEFT, padx=10)
-
-root.mainloop()
+login_window.mainloop()
